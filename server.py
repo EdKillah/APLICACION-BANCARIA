@@ -1,56 +1,14 @@
 from user import Usuario
-import requests
 import urllib.parse
 from pymongo import MongoClient
 import json
 from datetime import datetime
+from persistence.databases import *
 
 
-MONGO_URI = 'mongodb://localhost'
-client = MongoClient(MONGO_URI)
-db = client['bankserver']
-# global collections
 templates = './templates/'
+
 usuario_activo = None
-
-
-'''
-    Conexiones a BD
-'''
-
-
-def init_db():
-    collections = db['clients']
-    return collections
-
-
-def users_db():
-    collections = db['users']
-    return collections
-
-
-def administrators_db():
-    collections = db['administrators']
-    return collections
-
-
-def transactions_db():
-    collections = db['transactions']
-    return collections
-
-def auditors_db():
-    collections = db['auditors']
-    return collections    
-
-
-def sobregiros_db():
-    collections = db['overdraft']
-    return collections
-
-
-def retiros_db():
-    collections = db['retiros']
-    return collections
 
 
 '''
@@ -91,12 +49,14 @@ def get_user_by_nit(nit):
 
 
 def get_user_by_mail(mail, db):
-    print("db to search: ", db)
+    
     if(db == 'administrators'):
         collections = administrators_db()
-
+    elif(db == 'auditors'):
+        collections = auditors_db()
     else:  # (db=='administators'):
         collections = users_db()
+
 
     result = collections.find_one({"user_mail": mail})
     return result
@@ -287,13 +247,22 @@ def get_sobregiro_view(environ):
 
 def get_sobregiros(environ):
 
-    user = 'Usuario: ' + \
-        usuario_activo['user_name']+' '+usuario_activo['user_lastname']
+    user = 'Usuario: '+usuario_activo['user_name']+' '+usuario_activo['user_lastname']
     collections = sobregiros_db()
     results = collections.find()
     sobregiros = find_all(results)
     return render_template(
         template_name=templates+'sobregiros.html',
+        context={'user': user, 'message': '', 'sobregiros': sobregiros}
+    )
+
+def get_sobregiros_auditor(environ):
+    user = 'Usuario: '+usuario_activo['user_name']+' '+usuario_activo['user_lastname']
+    collections = sobregiros_db()
+    results = collections.find()
+    sobregiros = find_all(results)
+    return render_template(
+        template_name=templates+'sobregiros_auditor.html',
         context={'user': user, 'message': '', 'sobregiros': sobregiros}
     )
 
@@ -336,7 +305,7 @@ def create_user(environ):
 def login(environ):
     global usuario_activo
     json = get_json_decoded(environ)
-    print("JSON LOGIN: ", json)
+    
     user = get_user_by_mail(json['user_mail'], 'users')
     message = {'message': 'Usuario o contraseña incorrectos!'}
 
@@ -351,9 +320,16 @@ def login(environ):
         )
     else:
         user = get_user_by_mail(json['user_mail'], 'administrators')
-        print("user admin: ", user)
-        message['message'] = 'Logueado con exito!'
-        usuario_activo = user
+        if(user!=None):
+            if(user['user_password'] == json['user_password']):
+                message['message'] = 'Logueado con exito!'
+                usuario_activo = user                
+        else:
+            user = get_user_by_mail(json['user_mail'], 'auditors')
+            if(user!=None):
+                if(user['user_password'] == json['user_password']):
+                    message['message'] = 'Logueado con exito!'
+                    usuario_activo = user                
         return render_template(
             template_name=templates+'index.html',
             context={'message': message['message']}
@@ -446,8 +422,7 @@ def autorizar_sobregiro(environ):
 
 
 def modificar_saldo(environ):
-
-    # & usuario_activo['rol'] == 'administrador':
+    
     json = get_json_decoded(environ)
     if(exists_user(json['user_nit'])):
         collections = users_db()
@@ -487,6 +462,7 @@ def hacer_retiro(environ):
 
 
 def create_administrator(environ):
+    
     json = get_json_decoded(environ)
     #collection = administrators_db()
     collection = auditors_db()
@@ -505,7 +481,7 @@ def get_all_money(environ):
     for x in dinero:
         dinero_total += float(dinero[x]['saldo'])
     
-    print("DINERO TOTAL: ",dinero_total)
+    
 
 
     return render_template(
@@ -521,9 +497,6 @@ def posts(environ, path):
     if ((path == "/login")):
         data = login(environ)
 
-    elif ((path == "/create_account")):
-        #data = create_user(environ)
-        data = create_administrator(environ)
 
     elif(path == "/make_transaction"):
         data = make_transaction(environ)
@@ -577,8 +550,7 @@ def gets(environ, path):
     return data
 
 
-def gets_admin(environ, path):
-    print("GETS DE ADMIN FUNCTION: ", path)
+def gets_admin(environ, path):    
     path = '/'+path
     if path == "/registrar_cliente":
         data = get_registro_cliente(environ)
@@ -607,6 +579,26 @@ def gets_admin(environ, path):
     return data
 
 
+def gets_auditor(environ, path):
+
+    path = '/'+path        
+
+    if path == "/movimientos":
+        data = get_total_movimientos(environ)
+
+    elif path == "/sobregiros":
+        data = get_sobregiros_auditor(environ)
+
+    elif path == "/informacion_dinero":
+        data = get_all_money(environ)    
+
+    else:
+        data = render_template(template_name=templates +
+                               '404.html', context={"path": path})
+
+    return data    
+
+
 
 
 # Ejecutor de aplicacion
@@ -627,7 +619,8 @@ def app(environ, start_response):
             if(path.startswith("/admin") & (usuario_activo['rol_user'] == 'admin')):
                 params = path.split("/")
                 ruta = params[-1]
-                data = posts_admin(environ, ruta)
+                data = posts_admin(environ, ruta)                            
+
             else:
                 data = posts(environ, path)
 
@@ -635,17 +628,24 @@ def app(environ, start_response):
             if(path.startswith("/admin") & (usuario_activo['rol_user'] == 'admin')):
                 params = path.split("/")
                 if((len(params) > 3) & (params[2] == 'client')):
-                    ruta = params[2]+'/'+params[3]
-                    print("RUTA DE CLIENTE MODIFICAR SALDO: ", ruta)
+                    ruta = params[2]+'/'+params[3]                    
                 else:
                     ruta = params[-1]
                 data = gets_admin(environ, ruta)
+
+            elif(path.startswith("/auditor") & (usuario_activo['rol_user'] == 'auditor')):
+                params = path.split("/")
+                ruta = params[-1]
+                data = gets_auditor(environ, ruta)
             else:
                 data = gets(environ, path)
 
     else:
         if path == "/registrar_cuenta":
             data = registro_usuario(environ)
+        elif ((path == "/create_account")):            
+            data = create_user(environ)
+            #data = create_administrator(environ)
         else:
             data = data = render_template(
                 template_name=templates+'login.html', context={})
