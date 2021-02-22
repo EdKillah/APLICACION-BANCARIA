@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hacer transaccion</title>
+</head>
+
+<body>
+    <h1 style="text-align: center;">Realiza tu transacción</h1>
+    {user}
+    <div>
+        <strong>saldo actual: {saldo}</strong>
+    </div>
+    <div style="color: red;">
+        {message}
+    </div>
+    <form action="/make_transaction" method="post">
+        <div>
+            <label for="monto">Monto:</label>
+            <input type="number" min="1" max={saldo} id="monto" name="monto"><!--maximo posible es el saldo actual-->
+        </div>
+        <div>
+            <label for="destino">Cedula destinatario: </label>
+            <input type="text" id="cuenta_destino" name="cuenta_destino">
+        </div>
+        <div>
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password">
+        </div>
+                
+        <button type="submit">Enviar</button>
+    </form>
+</body>
+
+</html>

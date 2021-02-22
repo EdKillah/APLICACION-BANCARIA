@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hacer retiro</title>
+</head>
+
+<body>
+    <h1 style="text-align: center;">Realiza tu sobregiro: </h1>
+    <div>
+    {user}    
+    </div>
+    <div>
+        <strong>saldo actual: {saldo}</strong>
+    </div>
+    <div style="color: red;">
+        {message}
+    </div>
+    <form action="solicitar_sobregiro" method="post">                
+        <div>
+            <label for="cantidad">¿Cuanto necesitas?</label>
+            <input type="number" min="1" id="cantidad" name="cantidad">
+        </div>                        
+        <div>
+            <button>
+                Solicitar
+            </button>        
+        </div>        
+    </form>
+    
+    
+</body>
+</html>
