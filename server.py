@@ -29,9 +29,18 @@ def users_db():
     return collections
 
 
+def administrators_db():
+    collections = db['administrators']
+    return collections
+
+
 def transactions_db():
     collections = db['transactions']
     return collections
+
+def auditors_db():
+    collections = db['auditors']
+    return collections    
 
 
 def sobregiros_db():
@@ -81,8 +90,14 @@ def get_user_by_nit(nit):
     return result
 
 
-def get_user_by_mail(mail):
-    collections = users_db()
+def get_user_by_mail(mail, db):
+    print("db to search: ", db)
+    if(db == 'administrators'):
+        collections = administrators_db()
+
+    else:  # (db=='administators'):
+        collections = users_db()
+
     result = collections.find_one({"user_mail": mail})
     return result
 
@@ -107,6 +122,7 @@ def compare_passwords(pwd1, pwd2):
 
 
 def validate_user():
+
     band = False
     if usuario_activo != None:
         band = True
@@ -213,23 +229,34 @@ def get_movimientos():
     results = collections.find()
     movimientos = find_all(results)
     total = 0
-    for movimiento in movimientos:
 
-        print("Movimiento: ", movimientos[movimiento])
+    for movimiento in movimientos:
         total += float(movimientos[movimiento]['monto'])
 
     return movimientos, total
 
 
-def get_total_movimientos(environ):
-    # & usuario_activo['role'] == 'administrador' :
-    movimientos, total = get_movimientos()
-    print("len movimientos: ", len(movimientos))
-    print("TOTAL DE DINERO MOVIDO: ", total)
+def get_total_retiros():
+    collection = retiros_db()
+    results = collection.find()
+    retiros = find_all(results)
+    total = 0
+    for retiro in retiros:
+        total += float(retiros[retiro]['monto'])
 
+    return retiros, total
+
+
+def get_total_movimientos(environ):
+
+    movimientos, total_transacciones = get_movimientos()
+    numero_transacciones = len(movimientos)
+    retiros, total_retiros = get_total_retiros()
+    numero_retiros = len(retiros)
     return render_template(
         template_name=templates+'movements.html',
-        context={'movimientos': movimientos}
+        context={'movimientos': movimientos, 'numero_transacciones': numero_transacciones,
+                 'total_transacciones': total_transacciones, 'retiros': retiros, 'total_retiros':total_retiros,'numero_retiros':numero_retiros}
     )
 
 
@@ -309,7 +336,8 @@ def create_user(environ):
 def login(environ):
     global usuario_activo
     json = get_json_decoded(environ)
-    user = get_user_by_mail(json['user_mail'])
+    print("JSON LOGIN: ", json)
+    user = get_user_by_mail(json['user_mail'], 'users')
     message = {'message': 'Usuario o contraseña incorrectos!'}
 
     if(user != None):
@@ -322,6 +350,10 @@ def login(environ):
             context={'message': message['message']}
         )
     else:
+        user = get_user_by_mail(json['user_mail'], 'administrators')
+        print("user admin: ", user)
+        message['message'] = 'Logueado con exito!'
+        usuario_activo = user
         return render_template(
             template_name=templates+'index.html',
             context={'message': message['message']}
@@ -436,7 +468,7 @@ def modificar_saldo(environ):
 
 def hacer_retiro(environ):
     json = get_json_decoded(environ)
-    print("JSON RETIROSSS: ", json)
+
     user_collection = users_db()
     retiros_collection = retiros_db()
     cash = int(json['monto'])
@@ -454,23 +486,67 @@ def hacer_retiro(environ):
     )
 
 
+def create_administrator(environ):
+    json = get_json_decoded(environ)
+    #collection = administrators_db()
+    collection = auditors_db()
+    collection.insert_one(json)
+    return render_template(
+        template_name=templates+'index.html',
+        context={'message': 'Se creo el auditor.'}
+    )
+
+def get_all_money(environ):
+
+    collection = users_db()
+    results = collection.find()
+    dinero = find_all(results)
+    dinero_total = 0
+    for x in dinero:
+        dinero_total += float(dinero[x]['saldo'])
+    
+    print("DINERO TOTAL: ",dinero_total)
+
+
+    return render_template(
+        template_name=templates+'dinero.html',
+        context={'dinero_disponible': dinero_total}
+    )
+
+
+
+
 def posts(environ, path):
-    if ((path == "/registrar_cliente") & (environ.get("REQUEST_METHOD") == 'POST')):
-        data = registro_cliente(environ)
-    elif ((path == "/create_account")):
-        data = create_user(environ)
-    elif ((path == "/login")):
+
+    if ((path == "/login")):
         data = login(environ)
+
+    elif ((path == "/create_account")):
+        #data = create_user(environ)
+        data = create_administrator(environ)
+
     elif(path == "/make_transaction"):
         data = make_transaction(environ)
+
     elif(path == "/retiro"):
         data = hacer_retiro(environ)
+
     elif(path == "/solicitar_sobregiro"):
         data = solicitar_sobregiro(environ)
-    elif(path == "/autorizar_sobregiro"):
-        data = autorizar_sobregiro(environ)
+
+    return data
+
+
+def posts_admin(environ, path):
+    path = '/'+path
+    if ((path == "/registrar_cliente") & (environ.get("REQUEST_METHOD") == 'POST')):
+        data = registro_cliente(environ)
+    
     elif(path == "/modificar_saldo"):
         data = modificar_saldo(environ)
+
+    elif(path == "/autorizar_sobregiro"):
+        data = autorizar_sobregiro(environ)
 
     return data
 
@@ -478,62 +554,101 @@ def posts(environ, path):
 def gets(environ, path):
     if path == "":
         data = home(environ)
-    elif path == "/registrar_cliente":
-        data = get_registro_cliente(environ)
+
     elif path == "/login":
         data = get_login(environ)
-    elif path == "/show_users":
-        data = show_users(environ)
-    elif path == "/registrar_cuenta":
-        data = registro_usuario(environ)
+    
     elif path == "/transferencia":
         data = get_transaction_view(environ)
+
     elif path == "/mis_movimientos":
         data = get_movimientos_cliente(environ)
-    elif path == "/movimientos":
-        data = get_total_movimientos(environ)
+
     elif path == "/retiro":
         data = get_retiro_view(environ)
+
     elif path == "/solicitar_sobregiro":
         data = get_sobregiro_view(environ)
-    elif path == "/sobregiros":
-        data = get_sobregiros(environ)
 
-    elif path.startswith("/client"):
-        params = path.split("/")
-        data = get_user_info_by_nit(environ, params[-1])    
     else:
-        data = render_template(template_name=templates+'404.html', context={"path": path})
+        data = render_template(template_name=templates +
+                               '404.html', context={"path": path})
 
     return data
 
+
+def gets_admin(environ, path):
+    print("GETS DE ADMIN FUNCTION: ", path)
+    path = '/'+path
+    if path == "/registrar_cliente":
+        data = get_registro_cliente(environ)
+
+    # Los siguientes dos metodos pertenecen a los auditores tambien
+    elif path == "/show_users":
+        data = show_users(environ)
+
+    elif path == "/movimientos":
+        data = get_total_movimientos(environ)
+
+    elif path == "/sobregiros":
+        data = get_sobregiros(environ)
+
+    elif path == "/informacion_dinero":
+        data = get_all_money(environ)
+
+    elif path.startswith("/client"):
+        params = path.split("/")
+        data = get_user_info_by_nit(environ, params[-1])
+
+    else:
+        data = render_template(template_name=templates +
+                               '404.html', context={"path": path})
+
+    return data
+
+
+
+
 # Ejecutor de aplicacion
+
+
 def app(environ, start_response):
-    
+
     path = environ.get("PATH_INFO")
-    print("path: ", path)    
+    print("path: ", path)
     if path.endswith("/"):
         path = path[:-1]
-    if(environ.get("REQUEST_METHOD") == 'POST') & (path=='/login') & (usuario_activo==None):
+    if(environ.get("REQUEST_METHOD") == 'POST') & (path == '/login') & (usuario_activo == None):
         data = login(environ)
+    
     elif(validate_user()):
-        if(path.startswith("/admin") & (usuario_activo['rol_user']=='admin')):
-            params = path.split("/")
-            ruta = params[-1]            
-            print("params: ",params)
-            print("ruta: ",ruta)
 
-            
         if(environ.get("REQUEST_METHOD") == 'POST'):
-            data = posts(environ, path)
-            
-        elif(environ.get("REQUEST_METHOD") == 'GET'):
-            data = gets(environ, path)
-            
-            
+            if(path.startswith("/admin") & (usuario_activo['rol_user'] == 'admin')):
+                params = path.split("/")
+                ruta = params[-1]
+                data = posts_admin(environ, ruta)
+            else:
+                data = posts(environ, path)
+
+        elif(environ.get("REQUEST_METHOD") == 'GET'):            
+            if(path.startswith("/admin") & (usuario_activo['rol_user'] == 'admin')):
+                params = path.split("/")
+                if((len(params) > 3) & (params[2] == 'client')):
+                    ruta = params[2]+'/'+params[3]
+                    print("RUTA DE CLIENTE MODIFICAR SALDO: ", ruta)
+                else:
+                    ruta = params[-1]
+                data = gets_admin(environ, ruta)
+            else:
+                data = gets(environ, path)
+
     else:
-        data = data = render_template(
-            template_name=templates+'login.html', context={})
+        if path == "/registrar_cuenta":
+            data = registro_usuario(environ)
+        else:
+            data = data = render_template(
+                template_name=templates+'login.html', context={})
 
     data = data.encode("utf-8")
     start_response(
